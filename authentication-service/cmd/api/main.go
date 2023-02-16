@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v4/stdlib"
 	_ "github.com/jackc/pgconn"
 	_ "github.com/jackc/pgx/v4"
+	_ "github.com/jackc/pgx/v4/stdlib"
 )
 
 const webPort = "80"
@@ -19,20 +19,22 @@ const webPort = "80"
 type Config struct {
 	DB     *sql.DB
 	Models data.Models
+	Jwt    Jwt
 }
 
 func main() {
 	log.Println("Starting authentication service")
 
-	// connect to database
+	//connect to database
 	conn := connectToDB()
 	if conn == nil {
 		log.Panic("Can't connect to postgres")
 	}
-	// set up config
+	//set up config
 	app := Config{
 		DB:     conn,
-		Models: data.New(conn)}
+		Models: data.New(conn),
+	}
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", webPort),

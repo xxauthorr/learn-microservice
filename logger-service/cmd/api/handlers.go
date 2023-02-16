@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"log"
 	"logger/data"
 	"net/http"
 )
@@ -21,23 +23,28 @@ func (app Config) Ping(w http.ResponseWriter, r *http.Request) {
 		Error:   false,
 		Message: "This is the logger-server",
 	}
-	_ =app.writeJSON(w, http.StatusAccepted, payload)
+	_ = app.writeJSON(w, http.StatusAccepted, payload)
 }
 
 func (app Config) WriteLog(w http.ResponseWriter, r *http.Request) {
 	// read json into var
 	var requestPayload jsonPayload
-	_ = app.readJSON(w, r, &requestPayload)
-
+	err := app.readJSON(w, r, &requestPayload)
+	if err != nil {
+		app.errorJSON(w, errors.New("ndu kopanenavo"))
+		log.Println(err)
+		return
+	}
 	// insert data
 	event := data.LogEntry{
 		Name: requestPayload.Name,
 		Data: requestPayload.Data,
 	}
 
-	err := app.Models.LogEntry.Insert(event)
+	err = app.Models.LogEntry.Insert(event)
 	if err != nil {
 		app.errorJSON(w, err)
+		log.Print(err)
 		return
 	}
 

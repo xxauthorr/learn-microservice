@@ -20,6 +20,7 @@ type RequestPayload struct {
 	Action string        `json:"action"`
 	Auth   AuthPayload   `json:"auth,omitempty"`
 	Log    LoggerPayload `json:"logger,omitempty"`
+	Mail   MailPayload   `json:"mail,omitempty"`
 }
 
 // json body for action authenticate
@@ -32,6 +33,13 @@ type AuthPayload struct {
 type LoggerPayload struct {
 	Name string `json:"name"`
 	Data string `json:"data"`
+}
+
+type MailPayload struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Subject string `json:"subject"` 
+	Message string `json:"message"`
 }
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
@@ -61,11 +69,15 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "ping-auth":
 		app.pingAuthService(w)
 	case "auth":
-		app.authenticate(w, requestPayload.Auth)
+		app.authenticate(w, r, requestPayload.Auth)
 	case "ping-logger":
 		app.pingLogger(w)
 	case "log":
 		app.logItem(w, requestPayload.Log)
+	case "ping-mail":
+		app.pingMail(w)
+	case "mail":
+		app.sendMail(w, requestPayload.Mail)
 	default:
 		log.Println("request payload: ", requestPayload)
 		app.errorJSON(w, errors.New("unknown action"))
@@ -144,7 +156,8 @@ func (app *Config) pingLogger(w http.ResponseWriter) {
 }
 
 // get json and send it to the auth microservice
-func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
+func (app *Config) authenticate(w http.ResponseWriter, r *http.Request, a AuthPayload) {
+	token := r.Header.Get("Authorization")
 	jsonData, _ := json.MarshalIndent(a, "", "\t")
 	//call the service
 	request, err := http.NewRequest("POST", "http://authentication-service/authenticate", bytes.NewBuffer(jsonData))
@@ -152,6 +165,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 		app.errorJSON(w, err)
 		return
 	}
+	request.Header.Add("Authorization", token)
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
@@ -165,7 +179,7 @@ func (app *Config) authenticate(w http.ResponseWriter, a AuthPayload) {
 		app.errorJSON(w, errors.New("user is unauthorized"), response.StatusCode)
 		return
 	} else if response.StatusCode != http.StatusAccepted {
-		app.errorJSON(w, errors.New("invalid credentials"), response.StatusCode)
+		app.errorJSON(w, errors.New("invalid credentials from broker"), response.StatusCode)
 		return
 	}
 
@@ -221,10 +235,74 @@ func (app *Config) logItem(w http.ResponseWriter, l LoggerPayload) {
 	}
 
 	if payload.Error {
-		app.errorJSON(w, errors.New("invalid credentials"))
+		app.errorJSON(w, errors.New("invalid credentials from logs"))
 		return
 	}
 
 	app.writeJSON(w, http.StatusAccepted, payload)
 
+}
+
+func (app *Config) pingMail(w http.ResponseWriter) {
+	request, err := http.NewRequest("GET", "http://mail-service/", nil)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusAccepted {
+		app.errorJSON(w, errors.New("server returns error"))
+		return
+	}
+
+	var jsonFromService jsonResponse
+	err = json.NewDecoder(response.Body).Decode(&jsonFromService)
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+	if jsonFromService.Error {
+		app.errorJSON(w, errors.New(jsonFromService.Message))
+		return
+	}
+	payload := jsonFromService
+	app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload) {
+	jsonData, _ := json.MarshalIndent(msg, "", "\t")
+
+	// post to the mail service
+	request, err := http.NewRequest("POST", "http://mail-service/send", bytes.NewBuffer(jsonData))
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer response.Body.Close()
+
+	//make sure we get the correct status code
+	if response.StatusCode != http.StatusAccepted {
+		app.errorJSON(w, errors.New("error calling mail service"))
+		return
+	}
+
+	//send back json
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "Message sent to " + msg.To
+	app.writeJSON(w, http.StatusAccepted, payload)
 }
