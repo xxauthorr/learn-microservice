@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 )
 
@@ -38,7 +37,7 @@ type LoggerPayload struct {
 type MailPayload struct {
 	From    string `json:"from"`
 	To      string `json:"to"`
-	Subject string `json:"subject"` 
+	Subject string `json:"subject"`
 	Message string `json:"message"`
 }
 
@@ -77,9 +76,8 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "ping-mail":
 		app.pingMail(w)
 	case "mail":
-		app.sendMail(w, requestPayload.Mail)
+		app.sendMail(w, requestPayload.Mail, r)
 	default:
-		log.Println("request payload: ", requestPayload)
 		app.errorJSON(w, errors.New("unknown action"))
 	}
 }
@@ -157,7 +155,6 @@ func (app *Config) pingLogger(w http.ResponseWriter) {
 
 // get json and send it to the auth microservice
 func (app *Config) authenticate(w http.ResponseWriter, r *http.Request, a AuthPayload) {
-	token := r.Header.Get("Authorization")
 	jsonData, _ := json.MarshalIndent(a, "", "\t")
 	//call the service
 	request, err := http.NewRequest("POST", "http://authentication-service/authenticate", bytes.NewBuffer(jsonData))
@@ -165,7 +162,6 @@ func (app *Config) authenticate(w http.ResponseWriter, r *http.Request, a AuthPa
 		app.errorJSON(w, err)
 		return
 	}
-	request.Header.Add("Authorization", token)
 	client := &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
@@ -174,7 +170,6 @@ func (app *Config) authenticate(w http.ResponseWriter, r *http.Request, a AuthPa
 	}
 	defer response.Body.Close()
 	//make sure we get back the correct status code
-
 	if response.StatusCode == http.StatusUnauthorized {
 		app.errorJSON(w, errors.New("user is unauthorized"), response.StatusCode)
 		return
@@ -275,18 +270,44 @@ func (app *Config) pingMail(w http.ResponseWriter) {
 	app.writeJSON(w, http.StatusAccepted, payload)
 }
 
-func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload) {
+func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload, r *http.Request) {
 	jsonData, _ := json.MarshalIndent(msg, "", "\t")
 
+	var data struct {
+		Email string `json:"email"`
+	}
+	data.Email = msg.From
+	email, _ := json.MarshalIndent(data, "", "\t")
+	request, err := http.NewRequest("GET", "http://authentication-service/verifytoken", bytes.NewBuffer(email))
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", r.Header.Get("Authorization"))
+	client := &http.Client{}
+	responseFromAuthentication, err := client.Do(request)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer responseFromAuthentication.Body.Close()
+
+	//make sure we get the correct status code
+	if responseFromAuthentication.StatusCode != http.StatusAccepted {
+		app.errorJSON(w, errors.New("user not authorized"))
+		return
+	}
+
 	// post to the mail service
-	request, err := http.NewRequest("POST", "http://mail-service/send", bytes.NewBuffer(jsonData))
+	request, err = http.NewRequest("POST", "http://mail-service/send", bytes.NewBuffer(jsonData))
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 	request.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client = &http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
 		app.errorJSON(w, err)

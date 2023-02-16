@@ -29,5 +29,6 @@ func (app *Config) routes() http.Handler {
 
 	mux.Get("/", app.Ping)
 	mux.Post("/authenticate", app.Authenticate)
+	mux.Get("/verifytoken", app.VerifyToken)
 	return mux
 }

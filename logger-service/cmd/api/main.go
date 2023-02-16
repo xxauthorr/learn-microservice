@@ -6,6 +6,7 @@ import (
 	"log"
 	"logger/data"
 	"net/http"
+	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,7 +16,8 @@ import (
 const (
 	webPort  = "80"
 	rpcPort  = "5001"
-	mongoURL = "mongodb://localhost:27017"
+	mongoURL = "mongodb://mongo:27017"
+	// mongoURL = "mongo:27017"
 	gRpcPort = "50001"
 )
 
@@ -50,7 +52,7 @@ func main() {
 	}
 
 	log.Printf("Starting logger service on port %s\n", webPort)
-	
+
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", webPort),
 		Handler: app.routes(),
@@ -63,11 +65,14 @@ func main() {
 }
 
 func connectToMongo() (*mongo.Client, error) {
+	username := os.Getenv("MONGO_USERNAME")
+	password := os.Getenv("MONGO_PASSWORD")
 	// create connection options
+	// dbURL := fmt.Sprintf("mongodb://%s:%s@%s", username, password, mongoURL)
 	clientOptions := options.Client().ApplyURI(mongoURL)
 	clientOptions.SetAuth(options.Credential{
-		Username: "admin",
-		Password: "password",
+		Username: username,
+		Password: password,
 	})
 	// connect
 	c, err := mongo.Connect(context.TODO(), clientOptions)

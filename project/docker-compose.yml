@@ -36,9 +36,14 @@ services:
       context: ./../logger-service
       dockerfile: ./../logger-service/logger-service.dockerfile
     restart: always
+    depends_on:
+      - mongo
     deploy:
       mode: replicated 
       replicas: 1
+    environment:
+      MONGO_USERNAME: admin
+      MONGO_PASSWORD: password
 
   mail-service:
     build:
@@ -74,8 +79,8 @@ services:
 
   mongo:
     image: 'mongo:4.2.16-bionic'
-    ports:
-      - "27017:27017"
+    # ports:
+    #   - "27017:27017"
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin

@@ -42,7 +42,6 @@ func (j Jwt) GenerateToken(email string) (Jwt, error) {
 	var Jwt Jwt
 	key, err := loadEnv()
 	if err != nil {
-		log.Println("error in load env")
 		return Jwt, err
 	}
 	exp := time.Now().Local().Add(time.Minute * time.Duration(1))
@@ -63,7 +62,6 @@ func (j Jwt) GenerateToken(email string) (Jwt, error) {
 	fmt.Println(key.accessKey, " ", key.refreshKey)
 	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims).SignedString([]byte(key.accessKey))
 	if err != nil {
-		log.Println("error in load access token")
 		return Jwt, err
 	}
 
