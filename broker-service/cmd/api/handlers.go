@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/rpc"
 )
 
 // response from the service
@@ -74,7 +75,7 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "ping-logger":
 		app.pingLogger(w)
 	case "log":
-		app.logEventRabbit(w, requestPayload.Log)
+		app.logItemRPC(w, requestPayload.Log)
 	case "ping-mail":
 		app.pingMail(w)
 	case "mail":
@@ -363,4 +364,30 @@ func (app *Config) pushToQueue(name, msg string) error {
 		return err
 	}
 	return nil
+}
+
+type RPCPayload struct {
+	Name string
+	Data string
+}
+
+func (app *Config) logItemRPC(w http.ResponseWriter, rpcPayload LoggerPayload) {
+	client, err := rpc.Dial("tcp", "logger-service:5001")
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	var result string
+	err = client.Call("RPCServer.LogINFO", rpcPayload, &result)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	payload := jsonResponse{
+		Error:   false,
+		Message: result,
+	}
+
+	app.writeJSON(w, http.StatusAccepted, payload)
 }
