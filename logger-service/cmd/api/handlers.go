@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"log"
 	"logger/data"
 	"net/http"
@@ -31,7 +30,6 @@ func (app Config) WriteLog(w http.ResponseWriter, r *http.Request) {
 	var requestPayload jsonPayload
 	err := app.readJSON(w, r, &requestPayload)
 	if err != nil {
-		app.errorJSON(w, errors.New("ndu kopanenavo"))
 		log.Println(err)
 		return
 	}

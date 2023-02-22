@@ -1,9 +1,11 @@
 package main
 
 import (
+	"broker/event"
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 )
 
@@ -18,7 +20,7 @@ type jsonResponse struct {
 type RequestPayload struct {
 	Action string        `json:"action"`
 	Auth   AuthPayload   `json:"auth,omitempty"`
-	Log    LoggerPayload `json:"logger,omitempty"`
+	Log    LoggerPayload `json:"log,omitempty"`
 	Mail   MailPayload   `json:"mail,omitempty"`
 }
 
@@ -72,7 +74,7 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "ping-logger":
 		app.pingLogger(w)
 	case "log":
-		app.logItem(w, requestPayload.Log)
+		app.logEventRabbit(w, requestPayload.Log)
 	case "ping-mail":
 		app.pingMail(w)
 	case "mail":
@@ -200,43 +202,43 @@ func (app *Config) authenticate(w http.ResponseWriter, r *http.Request, a AuthPa
 	app.writeJSON(w, http.StatusAccepted, payload)
 }
 
-func (app *Config) logItem(w http.ResponseWriter, l LoggerPayload) {
-	jsonData, _ := json.MarshalIndent(l, "", "\t")
+// func (app *Config) logItem(w http.ResponseWriter, l LoggerPayload) {
+// 	jsonData, _ := json.MarshalIndent(l, "", "\t")
 
-	request, err := http.NewRequest("POST", "http://logger-service/log", bytes.NewBuffer(jsonData))
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		app.errorJSON(w, err)
-		return
-	}
-	defer response.Body.Close()
+// 	request, err := http.NewRequest("POST", "http://logger-service/log", bytes.NewBuffer(jsonData))
+// 	if err != nil {
+// 		app.errorJSON(w, err)
+// 		return
+// 	}
+// 	client := &http.Client{}
+// 	response, err := client.Do(request)
+// 	if err != nil {
+// 		app.errorJSON(w, err)
+// 		return
+// 	}
+// 	defer response.Body.Close()
 
-	if response.StatusCode != http.StatusAccepted {
-		app.errorJSON(w, err, response.StatusCode)
-		return
-	}
+// 	if response.StatusCode != http.StatusAccepted {
+// 		app.errorJSON(w, err, response.StatusCode)
+// 		return
+// 	}
 
-	var payload jsonResponse
+// 	var payload jsonResponse
 
-	err = json.NewDecoder(request.Body).Decode(&payload)
-	if err != nil {
-		app.errorJSON(w, err, http.StatusInternalServerError)
-		return
-	}
+// 	err = json.NewDecoder(request.Body).Decode(&payload)
+// 	if err != nil {
+// 		app.errorJSON(w, err, http.StatusInternalServerError)
+// 		return
+// 	}
 
-	if payload.Error {
-		app.errorJSON(w, errors.New("invalid credentials from logs"))
-		return
-	}
+// 	if payload.Error {
+// 		app.errorJSON(w, errors.New("invalid credentials from logs"))
+// 		return
+// 	}
 
-	app.writeJSON(w, http.StatusAccepted, payload)
+// 	app.writeJSON(w, http.StatusAccepted, payload)
 
-}
+// }
 
 func (app *Config) pingMail(w http.ResponseWriter) {
 	request, err := http.NewRequest("GET", "http://mail-service/", nil)
@@ -314,16 +316,51 @@ func (app *Config) sendMail(w http.ResponseWriter, msg MailPayload, r *http.Requ
 		return
 	}
 	defer response.Body.Close()
-
+	var jsonFromService jsonResponse
+	err = json.NewDecoder(response.Body).Decode(&jsonFromService)
 	//make sure we get the correct status code
 	if response.StatusCode != http.StatusAccepted {
 		app.errorJSON(w, errors.New("error calling mail service"))
 		return
 	}
+	if err != nil {
+		app.errorJSON(w, errors.New("error while decoding json response from service"))
+		return
+	}
 
 	//send back json
 	var payload jsonResponse
-	payload.Error = false
-	payload.Message = "Message sent to " + msg.To
+	payload.Error = jsonFromService.Error
+	payload.Message = jsonFromService.Message
 	app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Config) logEventRabbit(w http.ResponseWriter, l LoggerPayload) {
+	log.Println("this is the data :", l.Name, l.Data)
+	err := app.pushToQueue(l.Name, l.Data)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "logged via RabbitMQ"
+	app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Config) pushToQueue(name, msg string) error {
+	emitter, err := event.NewEventEmitter(app.Rabbit)
+	if err != nil {
+		return err
+	}
+	payoad := LoggerPayload{
+		Name: name,
+		Data: msg,
+	}
+	j, _ := json.MarshalIndent(&payoad, "", "\t")
+	err = emitter.Push(string(j), "log.INFO")
+	if err != nil {
+		return err
+	}
+	return nil
 }

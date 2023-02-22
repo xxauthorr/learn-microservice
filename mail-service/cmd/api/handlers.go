@@ -5,13 +5,14 @@ import (
 )
 
 func (app *Config) SendMail(w http.ResponseWriter, r *http.Request) {
-	type mailMessage struct {
+	type MailMessage struct {
 		From    string `json:"from"`
 		To      string `json:"to"`
-		Subject string `json:"message"`
-		Message string `json:"messaage"`
+		Subject string `json:"subject"`
+		Message string `json:"message"`
 	}
-	var requestPayload mailMessage
+
+	var requestPayload MailMessage
 
 	err := app.readJSON(w, r, &requestPayload)
 	if err != nil {
@@ -31,9 +32,10 @@ func (app *Config) SendMail(w http.ResponseWriter, r *http.Request) {
 		app.errorJSON(w, err)
 		return
 	}
+
 	payload := jsonResponse{
 		Error:   false,
-		Message: "sent to " + requestPayload.To,
+		Message: "Sent to " + requestPayload.To,
 	}
 
 	app.writeJSON(w, http.StatusAccepted, payload)

@@ -60,8 +60,16 @@ services:
       MAIL_ENCRYPTION: none
       MAIL_USERNAME: ""
       MAIL_PASSWORD: ""
-      FROM_NAME: "Hari Chandra"
-      FROM_ADDRESS: hari.chandra@example.com
+      FROM_NAME: "Harichandra Kishor"
+      FROM_ADDRESS: "harissownn@gmail.com"
+
+  listener-service:
+    build:
+      context: ./../listener-service
+      dockerfile: ./../listener-service/listener-service.dockerfile
+    deploy:
+      mode: replicated
+      replicas: 1
 
   postgres:
     image: 'postgres:14.2'
@@ -79,8 +87,8 @@ services:
 
   mongo:
     image: 'mongo:4.2.16-bionic'
-    # ports:
-    #   - "27017:27017"
+    ports:
+      - "27017:27017"
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
@@ -94,3 +102,13 @@ services:
     ports:
       - "1025:1025"
       - "8025:8025"
+  
+  rabbitmq:
+    image: rabbitmq:3.10-alpine 
+    ports:
+      - "5672:5672"
+    deploy:
+      mode: replicated
+      replicas: 1
+    volumes:
+      - ./db-data/rabbitmq:/var/lib/rabbitmq/
