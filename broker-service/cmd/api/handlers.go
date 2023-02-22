@@ -3,11 +3,17 @@ package main
 import (
 	"broker/event"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
+	"broker/logs"
 	"net/http"
 	"net/rpc"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // response from the service
@@ -75,7 +81,7 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "ping-logger":
 		app.pingLogger(w)
 	case "log":
-		app.logItemRPC(w, requestPayload.Log)
+		app.logEventRabbit(w, requestPayload.Log)
 	case "ping-mail":
 		app.pingMail(w)
 	case "mail":
@@ -371,13 +377,24 @@ type RPCPayload struct {
 	Data string
 }
 
-func (app *Config) logItemRPC(w http.ResponseWriter, rpcPayload LoggerPayload) {
+func (app *Config) logViaRPC(w http.ResponseWriter, r *http.Request) {
+
+	var rpcPayload LoggerPayload
+
+	err := app.readJSON(w, r, &rpcPayload)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	// connecting to logger service 
 	client, err := rpc.Dial("tcp", "logger-service:5001")
 	if err != nil {
 		app.errorJSON(w, err)
 		return
 	}
 	var result string
+	// calling the module from the logger-service
 	err = client.Call("RPCServer.LogINFO", rpcPayload, &result)
 	if err != nil {
 		app.errorJSON(w, err)
@@ -388,6 +405,41 @@ func (app *Config) logItemRPC(w http.ResponseWriter, rpcPayload LoggerPayload) {
 		Error:   false,
 		Message: result,
 	}
+
+	app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Config) logViaGRPC(w http.ResponseWriter, r *http.Request) {
+	var requestPayload LoggerPayload
+	err := app.readJSON(w, r, &requestPayload)
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	conn, err := grpc.Dial("logger-service:50001", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+	defer conn.Close()
+
+	c := logs.NewLogServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = c.WriteLog(ctx, &logs.LogRequest{
+		LogEntry: &logs.Log{
+			Name: requestPayload.Name,
+			Data: requestPayload.Data,
+		},
+	})
+	if err != nil {
+		app.errorJSON(w, err)
+		return
+	}
+
+	var payload jsonResponse
+	payload.Error = false
+	payload.Message = "logged"
 
 	app.writeJSON(w, http.StatusAccepted, payload)
 }

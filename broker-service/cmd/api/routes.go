@@ -8,8 +8,6 @@ import (
 	"github.com/go-chi/cors"
 )
 
-
-
 func (app *Config) routes() http.Handler {
 	mux := chi.NewRouter()
 
@@ -26,6 +24,8 @@ func (app *Config) routes() http.Handler {
 
 	mux.Post("/", app.Broker)
 	mux.Post("/handle", app.HandleSubmission)
+	mux.Post("/log-rpc", app.logViaRPC)
+	mux.Post("/log-grpc", app.logViaGRPC)
 	return mux
 
 }
