@@ -89,7 +89,8 @@ services:
     image: 'mongo:4.2.16-bionic'
     ports:
       - "27017:27017"
-    restart: always
+    deploy:
+      mode: global
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_DATABASE: logs
